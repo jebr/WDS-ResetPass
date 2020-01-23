@@ -110,9 +110,7 @@ class MainPage(QtWidgets.QMainWindow):
 
 
         # Change password Windows user
-        self.account_name = self.lineEdit_username.text()
-        self.account_password = self.lineEdit_password.text()
-        self.lineEdit_password.setEchoMode(2)
+        self.lineEdit_account_password.setEchoMode(2)  # Hide password
         self.pushButton_reset.clicked.connect(self.reset_password)
 
 
@@ -148,13 +146,18 @@ class MainPage(QtWidgets.QMainWindow):
         except urllib3.exceptions.ResponseError:
             logging.error('No internet connection, no response error')
 
+    # TODO Functie uitzoeken
     def reset_password(self):
+        if not self.lineEdit_account_name.text() or not self.lineEdit_account_password():
+            logging.info('Please fill in the account data')
+        else:
+            print(1)
+            # logging.info('Account name: {}'.format(self.lineEdit_account_name.text()))
         # check = subprocess.check_call(['powershell', 'Set-ADAccountPassword –Identity {} –Reset '
         #                                      '–NewPassword (ConvertTo-SecureString '
         #                                      '-AsPlainText {} -Force)'.format(self.lineEdit_username,
         #                                                                       self.lineEdit_password)])
-        logging.info(len(self.account_name))
-        pass
+
 
     def open_info_window(self):
         info_window_ = InfoWindow()

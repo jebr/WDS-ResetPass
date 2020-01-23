@@ -100,7 +100,7 @@
       </widget>
      </item>
      <item row="0" column="1">
-      <widget class="QLineEdit" name="lineEdit_username">
+      <widget class="QLineEdit" name="lineEdit_account_name">
        <property name="clearButtonEnabled">
         <bool>true</bool>
        </property>
@@ -114,7 +114,7 @@
       </widget>
      </item>
      <item row="1" column="1">
-      <widget class="QLineEdit" name="lineEdit_password">
+      <widget class="QLineEdit" name="lineEdit_account_password">
        <property name="clearButtonEnabled">
         <bool>true</bool>
        </property>
