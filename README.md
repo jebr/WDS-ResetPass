@@ -1,1 +1,1 @@
-# WDS-ResetPass
+# Windows Domain Settings - Reset password AD User
