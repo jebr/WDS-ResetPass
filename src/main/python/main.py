@@ -1,4 +1,3 @@
-from fbs_runtime.application_context.PyQt5 import ApplicationContext
 from PyQt5.QtWidgets import QMainWindow, QApplication, QLabel, QFileDialog, QMessageBox, QDialog
 
 from PyQt5.uic import loadUi
@@ -37,7 +36,7 @@ def resource_path(relative_path):
 
 # Set logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-# logging.disable(logging.DEBUG)
+logging.disable(logging.DEBUG)
 
 # What OS is running
 what_os = platform.system()
@@ -80,15 +79,10 @@ class MainPage(QtWidgets.QMainWindow):
         self.actionInfo.triggered.connect(self.open_info_window)
 
         # Initial update check
-        self.check_update()
+        # self.check_update()
 
         # Update button
         self.actionUpdate.triggered.connect(self.website_update)
-
-        # Insufficient rights label
-        self.label_no_rights.hide()
-        self.label_no_rights.setFont(QtGui.QFont("Times", 9, QtGui.QFont.Bold))
-        self.label_no_rights.setStyleSheet('QLabel { color: red }')
 
         # Check user in domain
         self.domain_check = subprocess.check_output(['powershell.exe',
@@ -99,15 +93,27 @@ class MainPage(QtWidgets.QMainWindow):
             logging.info('User in domain: {}'.format(self.domain_check))
             self.criticalbox('Your PC is not a member of a domain.\n\nThis application works only on a computer'
                              '\nwhich is part of a domain.')
-            # exit()
+            exit()
         if 'True' in self.domain_check:
             logging.info('User in domain: {}'.format(self.domain_check))
 
-        # TODO
-        # Check user group
-
-
-
+        # Check account name
+        self.current_user = subprocess.check_output(['powershell.exe', 'whoami'], encoding='utf-8')
+        self.current_user = self.current_user.split('\\')
+        self.label_account.setText('Your account: {}'.format(self.current_user[1]))
+        # Check user security group
+        self.user_groups = subprocess.check_output(['gpresult', '-r'], shell=True)
+        self.user_groups = str(self.user_groups)
+        # TODO Account operator heeft onvoldoende rechten
+        if 'Account Operators' in self.user_groups:
+            self.label_role.setText('Your role: Account Operator')
+            logging.info('Role user: Account operator')
+        elif 'Administrator' in self.user_groups:
+            self.label_role.setText('Your role: Administrator')
+            logging.info('Role user: Administrator')
+        else:
+            self.criticalbox('You have insufficient rights to change a users password\n\n'
+                             'Ask your system administrator for more information')
 
         # Change password Windows user
         self.lineEdit_account_password.setEchoMode(2)  # Hide password
@@ -148,16 +154,26 @@ class MainPage(QtWidgets.QMainWindow):
 
     # TODO Functie uitzoeken
     def reset_password(self):
-        if not self.lineEdit_account_name.text() or not self.lineEdit_account_password():
-            logging.info('Please fill in the account data')
+        account_name = self.lineEdit_account_name.text()
+        account_new_password = self.lineEdit_account_password.text()
+        # Check input
+        if not account_name:
+            logging.info('Please fill in account name')
+        elif not account_new_password:
+            logging.info('Please fill in new password')
         else:
-            print(1)
-            # logging.info('Account name: {}'.format(self.lineEdit_account_name.text()))
-        # check = subprocess.check_call(['powershell', 'Set-ADAccountPassword –Identity {} –Reset '
-        #                                      '–NewPassword (ConvertTo-SecureString '
-        #                                      '-AsPlainText {} -Force)'.format(self.lineEdit_username,
-        #                                                                       self.lineEdit_password)])
-
+            try:
+                subprocess.check_call(['powershell', 'Set-ADAccountPassword –Identity {} –Reset '
+                                                 '–NewPassword (ConvertTo-SecureString '
+                                                 '-AsPlainText {} -Force)'.format(account_name,
+                                                                                  account_new_password)])
+                logging.info('Password changed for user: {}'.format(account_name))
+                self.infobox('Password reset completed for user {}'.format(account_name))
+            except subprocess.CalledProcessError:
+                self.warningbox('Can\'t change password of user {}'.format(account_name))
+            finally:
+                self.lineEdit_account_name.clear()
+                self.lineEdit_account_password.clear()
 
     def open_info_window(self):
         info_window_ = InfoWindow()
