@@ -100,7 +100,14 @@ class MainPage(QtWidgets.QMainWindow):
         # Check account name
         self.current_user = subprocess.check_output(['powershell.exe', 'whoami'], encoding='utf-8')
         self.current_user = self.current_user.split('\\')
-        self.label_account.setText('Your account: {}'.format(self.current_user[1]))
+        self.current_user = self.current_user[1].strip()
+        self.app_user = subprocess.check_output(['powershell.exe',
+                                                 '(Get-ADUser "{}" '
+                                                 '-Properties DisplayName).DisplayName'.format(self.current_user)],
+                                                encoding='utf-8')  # Get User DisplayName
+        logging.info('Current user: {}'.format(self.app_user))
+        self.label_account.setText('Your account: {}'.format(self.app_user))
+
         # Check user security group
         self.user_groups = subprocess.check_output(['gpresult', '-r'], shell=True)
         self.user_groups = str(self.user_groups)
@@ -114,6 +121,11 @@ class MainPage(QtWidgets.QMainWindow):
         else:
             self.criticalbox('You have insufficient rights to change a users password\n\n'
                              'Ask your system administrator for more information')
+
+        # TODO Lijst opvragen met Domain Users en deze weergeven in het veld lineEdit_account_name
+        # Powershell commando
+        # Get-ADUser -filter * | select-object Name, SamAccountName
+        # Gebruiker Administrator, Heijmans, Servicehut en eigen account uit de lijst filteren
 
         # Change password Windows user
         self.lineEdit_account_password.setEchoMode(2)  # Hide password
@@ -159,8 +171,10 @@ class MainPage(QtWidgets.QMainWindow):
         # Check input
         if not account_name:
             logging.info('Please fill in account name')
+            self.infobox('Please fill in the account name')
         elif not account_new_password:
             logging.info('Please fill in new password')
+            self.infobox('Please fill in the new password')
         else:
             try:
                 subprocess.check_call(['powershell', 'Set-ADAccountPassword –Identity {} –Reset '
