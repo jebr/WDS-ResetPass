@@ -138,7 +138,6 @@ git status
 /build
 /dist/
 /__pycache__
-main.spec
 /example_data
-todo.md
 /src/build
+System Volume Information

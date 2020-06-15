@@ -1,3 +1,4 @@
+import domain as domain
 from PyQt5.QtWidgets import QMainWindow, QApplication, QLabel, QFileDialog, QMessageBox, QDialog
 
 from PyQt5.uic import loadUi
@@ -6,18 +7,25 @@ from PyQt5.QtGui import QPixmap,  QFont
 import sys
 import os
 import logging
-import platform
 import webbrowser
-import urllib3
 import subprocess
+import system_checks
+import domain_tools
+import wdt_utils
+
+# Instances
+system_checks = system_checks.SystemChecks()
+domain_tools = domain_tools.DomainTools()
+wdt_utils = wdt_utils.WDTUtils()
 
 # Globals
 current_version = float(1.0)
 version_check = 'https://raw.githubusercontent.com/jebr/WDS-ResetPass/master/version.txt'
 repo_home = 'https://github.com/jebr/WDS-ResetPass'
 repo_release = 'https://github.com/jebr/WDS-ResetPass/releases'
-logo_icon = '../icons/logo.png'
+logo_icon = 'icons/logo.png'
 app_title = 'WDS-Resetpass'
+current_user = wdt_utils.powershell(['$env:username']).rstrip()
 
 try:
     os.chdir(os.path.dirname(sys.argv[0]))
@@ -33,35 +41,12 @@ def resource_path(relative_path):
         base_path = os.environ.get("_MEIPASS2", os.path.abspath("."))
     return os.path.join(base_path, relative_path)
 
-
-# Set logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logging.disable(logging.DEBUG)
-
-# What OS is running
-what_os = platform.system()
-if 'Windows' in what_os:
-    username = os.environ.get('USERNAME')
-    start_location = 'c:\\Users\\{}\\Documents'.format(username)
-    logging.info('OS: Windows')
-elif 'Linux' in what_os:
-    username = os.environ.get('USER')
-    start_location = '/home/{}/Documents'.format(username)
-    logging.info('OS: Linux')
-elif 'Darwin' in what_os:
-    username = os.environ.get('USER')
-    start_location = '/Users/{}/Documents'.format(username)
-    logging.info('OS: MacOS')
-else:
-    exit()
-
-
 # PyQT GUI
 class MainPage(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         # Load Main UI
-        loadUi(resource_path('../resources/ui/main_window.ui'), self)
+        loadUi(resource_path('resources/ui/main_window.ui'), self)
         # Set Size Application
         self.setFixedSize(407, 291)
         # Set Application Icon
@@ -84,50 +69,26 @@ class MainPage(QtWidgets.QMainWindow):
         # Update button
         self.actionUpdate.triggered.connect(self.website_update)
 
-        # Check user in domain
-        self.domain_check = subprocess.check_output(['powershell.exe',
-                                                     '(Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain'],
-                                                    encoding='utf-8')
-
-        if 'False' in self.domain_check:
-            logging.info('User in domain: {}'.format(self.domain_check))
+        # Pre-checks
+        if not system_checks.domain_check():
             self.criticalbox('Your PC is not a member of a domain.\n\nThis application works only on a computer'
                              '\nwhich is part of a domain.')
-            exit()
-        if 'True' in self.domain_check:
-            logging.info('User in domain: {}'.format(self.domain_check))
+            # sys.exit()
 
-        # Check account name
-        self.current_user = subprocess.check_output(['powershell.exe', 'whoami'], encoding='utf-8')
-        self.current_user = self.current_user.split('\\')
-        self.current_user = self.current_user[1].strip()
-        self.app_user = subprocess.check_output(['powershell.exe',
-                                                 '(Get-ADUser "{}" '
-                                                 '-Properties DisplayName).DisplayName'.format(self.current_user)],
-                                                encoding='utf-8')  # Get User DisplayName
-        logging.info('Current user: {}'.format(self.app_user))
-        self.label_account.setText('Your account: {}'.format(self.app_user))
+        if not system_checks.rsat_check():
+            self.criticalbox('RSAT is not installed on this PC\n\nAsk your system administrator for help')
+            # sys.exit()
 
-        # Check user security group
-        self.user_groups = subprocess.check_output(['gpresult', '-r'], shell=True)
-        self.user_groups = str(self.user_groups)
-        # TODO Account operator heeft onvoldoende rechten
-        if 'Account Operators' in self.user_groups:
-            self.label_role.setText('Your role: Account Operator')
-            logging.info('Role user: Account operator')
-        elif 'Administrator' in self.user_groups:
-            self.label_role.setText('Your role: Administrator')
-            logging.info('Role user: Administrator')
-        else:
-            self.criticalbox('You have insufficient rights to change a users password\n\n'
-                             'Ask your system administrator for more information')
+        if not domain_tools.check_admin_user(f'{current_user}'):
+            self.criticalbox('Insufficient rights to use this application\n\nAsk your system administrator for help')
+            # sys.exit()
 
-        # TODO Lijst opvragen met Domain Users en deze weergeven in het veld lineEdit_account_name
-        # Powershell commando
-        # Get-ADUser -filter * | select-object Name, SamAccountName
-        # Gebruiker Administrator, Heijmans, Servicehut en eigen account uit de lijst filteren
-
-        # Change password Windows user
+        # # TODO Lijst opvragen met Domain Users en deze weergeven in het veld lineEdit_account_name
+        # # Powershell command
+        # # Get-ADUser -filter * | select-object Name, SamAccountName
+        # # Gebruiker Administrator, Heijmans, Servicehut en eigen account uit de lijst filteren
+        #
+        # # Change password Windows user
         self.lineEdit_account_password.setEchoMode(2)  # Hide password
         self.pushButton_reset.clicked.connect(self.reset_password)
 
@@ -135,56 +96,28 @@ class MainPage(QtWidgets.QMainWindow):
     def website_update(self):
         webbrowser.open(repo_release)
 
-    def check_update(self):
-        # Version check
-        try:
-            timeout = urllib3.Timeout(connect=2.0, read=7.0)
-            http = urllib3.PoolManager(timeout=timeout)
-            response = http.request('GET', version_check)
-            data = response.data.decode('utf-8')
-
-            new_version = float(data)
-
-            if current_version < new_version:
-                logging.info('Current software version: v{}'.format(current_version))
-                logging.info('New software version available v{}'.format(new_version))
-                logging.info(repo_release)
-                self.infobox_update('There is an update available\n Do you want to download it now?')
-                self.statusBar().showMessage('New software version available v' + str(new_version))
-                self.actionUpdate.setEnabled(True)
-            else:
-                logging.info('Current software version: v{}'.format(current_version))
-                logging.info('Latest release: v{}'.format(new_version))
-                logging.info('Software up-to-date')
-                self.statusBar().showMessage('{} v'.format(app_title) + str(new_version))
-                self.actionUpdate.setEnabled(False)
-
-        except urllib3.exceptions.MaxRetryError:
-            logging.error('No internet connection, max retry error')
-        except urllib3.exceptions.ResponseError:
-            logging.error('No internet connection, no response error')
-
     # TODO Functie uitzoeken
     def reset_password(self):
         account_name = self.lineEdit_account_name.text()
         account_new_password = self.lineEdit_account_password.text()
         # Check input
         if not account_name:
-            logging.info('Please fill in account name')
             self.infobox('Please fill in the account name')
         elif not account_new_password:
-            logging.info('Please fill in new password')
             self.infobox('Please fill in the new password')
         else:
+            # set-adaccountpassword -identity test1 -Reset -NewPassword (convertto-securestring -asplaintext "Computer-02" -force)
             try:
                 subprocess.check_call(['powershell', 'Set-ADAccountPassword –Identity {} –Reset '
                                                  '–NewPassword (ConvertTo-SecureString '
                                                  '-AsPlainText {} -Force)'.format(account_name,
                                                                                   account_new_password)])
-                logging.info('Password changed for user: {}'.format(account_name))
-                self.infobox('Password reset completed for user {}'.format(account_name))
+                # Powershell command
+                # Set-ADAccountPassword –Identity {} –Reset –NewPassword (ConvertTo-SecureString -AsPlainText {} -Force)
+                wdt_utils.system_log(f'Password changed for user: {account_name}', 'info')
+                self.infobox(f'Password reset completed for user {account_name}')
             except subprocess.CalledProcessError:
-                self.warningbox('Can\'t change password of user {}'.format(account_name))
+                self.warningbox(f'Can\'t change password of user {account_name}')
             finally:
                 self.lineEdit_account_name.clear()
                 self.lineEdit_account_password.clear()
@@ -212,7 +145,7 @@ class MainPage(QtWidgets.QMainWindow):
 class InfoWindow(QDialog):
     def __init__(self):
         super().__init__(None, QtCore.Qt.WindowCloseButtonHint)
-        loadUi(resource_path('../resources/ui/info_dialog.ui'), self)
+        loadUi(resource_path('resources/ui/info_dialog.ui'), self)
         self.setWindowIcon(QtGui.QIcon(resource_path(logo_icon)))
         self.setFixedSize(320, 240)
         self.setWindowTitle(app_title)
